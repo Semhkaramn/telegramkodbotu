@@ -29,7 +29,7 @@ export async function POST(request: NextRequest) {
     }
 
     const body = await request.json();
-    const { username, password } = body;
+    const { username, password, type = "user" } = body; // type: "admin" veya "user"
 
     if (!username || !password) {
       return NextResponse.json(
@@ -38,7 +38,54 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // Kullanıcıyı bul (case-insensitive)
+    // Admin girişi
+    if (type === "admin") {
+      const admin = await prisma.admin.findFirst({
+        where: {
+          username: {
+            equals: username,
+            mode: 'insensitive'
+          }
+        },
+      });
+
+      if (!admin) {
+        incrementRateLimit(clientIP);
+        return NextResponse.json(
+          { error: "Kullanici adi veya sifre hatali" },
+          { status: 401 }
+        );
+      }
+
+      const isValid = await verifyPassword(password, admin.password);
+      if (!isValid) {
+        incrementRateLimit(clientIP);
+        return NextResponse.json(
+          { error: "Kullanici adi veya sifre hatali" },
+          { status: 401 }
+        );
+      }
+
+      // Admin session oluştur
+      await createSession({
+        userId: admin.id,
+        username: admin.username,
+        role: "admin",
+      });
+
+      resetRateLimit(clientIP);
+
+      return NextResponse.json({
+        success: true,
+        user: {
+          id: admin.id,
+          username: admin.username,
+          role: "admin",
+        },
+      });
+    }
+
+    // User girişi (varsayılan)
     const user = await prisma.user.findFirst({
       where: {
         username: {
@@ -49,7 +96,6 @@ export async function POST(request: NextRequest) {
     });
 
     if (!user) {
-      // Başarısız login - sayacı artır
       incrementRateLimit(clientIP);
       return NextResponse.json(
         { error: "Kullanici adi veya sifre hatali" },
@@ -59,7 +105,6 @@ export async function POST(request: NextRequest) {
 
     // Kullanıcı aktif mi kontrol et
     if (!user.isActive) {
-      // Başarısız login - sayacı artır
       incrementRateLimit(clientIP);
       return NextResponse.json(
         { error: "Hesabiniz devre disi birakilmis. Yonetici ile iletisime gecin." },
@@ -69,7 +114,6 @@ export async function POST(request: NextRequest) {
 
     // Kullanıcı banlı mı kontrol et
     if (user.isBanned) {
-      // Başarısız login - sayacı artır
       incrementRateLimit(clientIP);
       const reason = user.bannedReason ? ` Sebep: ${user.bannedReason}` : "";
       return NextResponse.json(
@@ -81,7 +125,6 @@ export async function POST(request: NextRequest) {
     // Şifre kontrolü
     const isValid = await verifyPassword(password, user.password);
     if (!isValid) {
-      // Başarısız login - sayacı artır
       incrementRateLimit(clientIP);
       return NextResponse.json(
         { error: "Kullanici adi veya sifre hatali" },
@@ -89,23 +132,29 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // Session oluştur
+    // User session oluştur
     await createSession({
       userId: user.id,
       username: user.username,
-      role: user.role,
+      role: "user",
     });
 
-    // Başarılı login - rate limit sıfırla
     resetRateLimit(clientIP);
+
+    // Kullanıcının tam adını oluştur
+    const fullName = [user.firstName, user.lastName].filter(Boolean).join(" ") || null;
 
     return NextResponse.json({
       success: true,
       user: {
         id: user.id,
         username: user.username,
-        displayName: user.displayName,
-        role: user.role,
+        firstName: user.firstName,
+        lastName: user.lastName,
+        fullName,
+        telegramUsername: user.telegramUsername,
+        photoUrl: user.photoUrl,
+        role: "user",
       },
     });
   } catch (error) {
