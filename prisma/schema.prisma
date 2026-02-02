@@ -1,0 +1,77 @@
+generator client {
+  provider      = "prisma-client-js"
+  binaryTargets = ["native", "rhel-openssl-1.0.x", "rhel-openssl-3.0.x", "debian-openssl-1.1.x", "debian-openssl-3.0.x"]
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// Kullanıcı sistemi
+model User {
+  id           Int       @id @default(autoincrement())
+  username     String    @unique
+  password     String
+  displayName  String?   @map("display_name")
+  role         String    @default("user") // "superadmin" veya "user"
+  isActive     Boolean   @default(true) @map("is_active")
+  isBanned     Boolean   @default(false) @map("is_banned")
+  bannedAt     DateTime? @map("banned_at")
+  bannedReason String?   @map("banned_reason")
+  botEnabled   Boolean   @default(false) @map("bot_enabled")
+  createdAt    DateTime  @default(now()) @map("created_at")
+  updatedAt    DateTime  @updatedAt @map("updated_at")
+
+  channels   UserChannel[]
+  adminLinks AdminLink[]
+
+  @@map("users")
+}
+
+// Kullanıcı-Kanal ilişkisi
+model UserChannel {
+  id        Int     @id @default(autoincrement())
+  userId    Int     @map("user_id")
+  channelId BigInt  @map("channel_id")
+  paused    Boolean @default(true)
+
+  user    User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+  channel Channel @relation(fields: [channelId], references: [channelId], onDelete: Cascade)
+
+  @@unique([userId, channelId])
+  @@map("user_channels")
+}
+
+// Kanallar (hedef kanallar)
+model Channel {
+  channelId       BigInt   @id @map("channel_id")
+  channelName     String?  @map("channel_name")
+  channelUsername String?  @map("channel_username")
+  channelPhoto    String?  @map("channel_photo")
+  memberCount     Int?     @map("member_count")
+  description     String?  @map("description")
+  isJoined        Boolean  @default(false) @map("is_joined")
+  joinError       String?  @map("join_error")
+  lastUpdated     DateTime @default(now()) @map("last_updated")
+  createdAt       DateTime @default(now()) @map("created_at")
+
+  userChannels UserChannel[]
+
+  @@map("channels")
+}
+
+// Admin linkleri (kullanıcı bazlı link özelleştirme)
+model AdminLink {
+  id        Int      @id @default(autoincrement())
+  userId    Int      @map("user_id")
+  channelId BigInt   @map("channel_id")
+  linkCode  String   @map("link_code")
+  linkUrl   String   @map("link_url")
+  createdAt DateTime @default(now()) @map("created_at")
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, channelId, linkCode])
+  @@map("admin_links")
+}

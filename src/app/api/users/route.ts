@@ -1,0 +1,99 @@
+import { NextRequest, NextResponse } from "next/server";
+import { prisma } from "@/lib/db";
+import { getSession, hashPassword } from "@/lib/auth";
+
+// GET - Tüm kullanıcıları listele (superadmin only)
+export async function GET() {
+  try {
+    const session = await getSession();
+    if (!session || session.role !== "superadmin") {
+      return NextResponse.json({ error: "Yetkisiz erişim" }, { status: 403 });
+    }
+
+    const users = await prisma.user.findMany({
+      select: {
+        id: true,
+        username: true,
+        role: true,
+        isActive: true,
+        isBanned: true,
+        bannedAt: true,
+        bannedReason: true,
+        botEnabled: true,
+        createdAt: true,
+        updatedAt: true,
+        _count: {
+          select: { channels: true, adminLinks: true },
+        },
+      },
+      orderBy: { createdAt: "desc" },
+    });
+
+    return NextResponse.json(users);
+  } catch (error) {
+    console.error("Get users error:", error);
+    return NextResponse.json({ error: "Sunucu hatası" }, { status: 500 });
+  }
+}
+
+// POST - Yeni kullanıcı oluştur (superadmin only)
+// Her zaman normal kullanıcı olarak oluşturulur (role: "user")
+export async function POST(request: NextRequest) {
+  try {
+    const session = await getSession();
+    if (!session || session.role !== "superadmin") {
+      return NextResponse.json({ error: "Yetkisiz erişim" }, { status: 403 });
+    }
+
+    const body = await request.json();
+    const { username, password } = body;
+
+    if (!username || !password) {
+      return NextResponse.json(
+        { error: "Kullanıcı adı ve şifre gerekli" },
+        { status: 400 }
+      );
+    }
+
+    // Kullanıcı adı kontrolü
+    const existing = await prisma.user.findUnique({
+      where: { username },
+    });
+
+    if (existing) {
+      return NextResponse.json(
+        { error: "Bu kullanıcı adı zaten kullanılıyor" },
+        { status: 400 }
+      );
+    }
+
+    // Şifreyi hash'le
+    const hashedPassword = await hashPassword(password);
+
+    // Her zaman normal kullanıcı olarak oluştur (süper admin panelden eklenemez)
+    const user = await prisma.user.create({
+      data: {
+        username,
+        password: hashedPassword,
+        role: "user",        // Her zaman normal kullanıcı
+        isActive: true,      // Yeni kullanıcı aktif
+        isBanned: false,     // Yeni kullanıcı banlı değil
+        botEnabled: false,   // Bot varsayılan KAPALI - süper admin açmalı
+      },
+      select: {
+        id: true,
+        username: true,
+        role: true,
+        isActive: true,
+        isBanned: true,
+        botEnabled: true,
+        createdAt: true,
+      },
+    });
+
+    return NextResponse.json(user);
+  } catch (error) {
+    console.error("Create user error:", error);
+    return NextResponse.json({ error: "Sunucu hatası" }, { status: 500 });
+  }
+}
