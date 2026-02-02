@@ -8,42 +8,81 @@ datasource db {
   url      = env("DATABASE_URL")
 }
 
-// Kullanıcı sistemi
-model User {
-  id           Int       @id @default(autoincrement())
-  username     String    @unique
-  password     String
-  displayName  String?   @map("display_name")
-  role         String    @default("user") // "superadmin" veya "user"
-  isActive     Boolean   @default(true) @map("is_active")
-  isBanned     Boolean   @default(false) @map("is_banned")
-  bannedAt     DateTime? @map("banned_at")
-  bannedReason String?   @map("banned_reason")
-  botEnabled   Boolean   @default(false) @map("bot_enabled")
-  createdAt    DateTime  @default(now()) @map("created_at")
-  updatedAt    DateTime  @updatedAt @map("updated_at")
+// ══════════════════════════════════════════════════════════════════════════════
+// ADMIN SİSTEMİ (Ayrı tablo)
+// ══════════════════════════════════════════════════════════════════════════════
 
-  channels   UserChannel[]
-  adminLinks AdminLink[]
+model Admin {
+  id        Int      @id @default(autoincrement())
+  username  String   @unique
+  password  String
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  @@map("admins")
+}
+
+// ══════════════════════════════════════════════════════════════════════════════
+// KULLANICI SİSTEMİ
+// ══════════════════════════════════════════════════════════════════════════════
+
+model User {
+  id               Int       @id @default(autoincrement())
+  username         String    @unique
+  password         String
+
+  // Telegram bilgileri
+  telegramId       BigInt?   @unique @map("telegram_id")
+  telegramUsername String?   @map("telegram_username")
+  firstName        String?   @map("first_name")
+  lastName         String?   @map("last_name")
+  photoUrl         String?   @map("photo_url")
+  lastSeen         DateTime? @map("last_seen")
+
+  // Durum bilgileri
+  isActive         Boolean   @default(true) @map("is_active")
+  isBanned         Boolean   @default(false) @map("is_banned")
+  bannedAt         DateTime? @map("banned_at")
+  bannedReason     String?   @map("banned_reason")
+  botEnabled       Boolean   @default(false) @map("bot_enabled")
+
+  createdAt        DateTime  @default(now()) @map("created_at")
+  updatedAt        DateTime  @updatedAt @map("updated_at")
+
+  channels         UserChannel[]
+  adminLinks       AdminLink[]
+  codeDeliveries   CodeDelivery[]
+  dailyStats       DailyStat[]
 
   @@map("users")
 }
 
-// Kullanıcı-Kanal ilişkisi
-model UserChannel {
-  id        Int     @id @default(autoincrement())
-  userId    Int     @map("user_id")
-  channelId BigInt  @map("channel_id")
-  paused    Boolean @default(true)
+// ══════════════════════════════════════════════════════════════════════════════
+// KULLANICI-KANAL İLİŞKİSİ
+// ══════════════════════════════════════════════════════════════════════════════
 
-  user    User    @relation(fields: [userId], references: [id], onDelete: Cascade)
-  channel Channel @relation(fields: [channelId], references: [channelId], onDelete: Cascade)
+model UserChannel {
+  id             Int       @id @default(autoincrement())
+  userId         Int       @map("user_id")
+  channelId      BigInt    @map("channel_id")
+  paused         Boolean   @default(true)
+
+  // Bot admin kontrolü
+  isBotAdmin     Boolean   @default(false) @map("is_bot_admin")
+  lastAdminCheck DateTime? @map("last_admin_check")
+  adminError     String?   @map("admin_error")
+
+  user           User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  channel        Channel   @relation(fields: [channelId], references: [channelId], onDelete: Cascade)
 
   @@unique([userId, channelId])
   @@map("user_channels")
 }
 
-// Kanallar (hedef kanallar)
+// ══════════════════════════════════════════════════════════════════════════════
+// KANALLAR (hedef kanallar)
+// ══════════════════════════════════════════════════════════════════════════════
+
 model Channel {
   channelId       BigInt   @id @map("channel_id")
   channelName     String?  @map("channel_name")
@@ -56,12 +95,17 @@ model Channel {
   lastUpdated     DateTime @default(now()) @map("last_updated")
   createdAt       DateTime @default(now()) @map("created_at")
 
-  userChannels UserChannel[]
+  userChannels    UserChannel[]
+  codeDeliveries  CodeDelivery[]
+  dailyStats      DailyStat[]
 
   @@map("channels")
 }
 
-// Admin linkleri (kullanıcı bazlı link özelleştirme)
+// ══════════════════════════════════════════════════════════════════════════════
+// ADMIN LİNKLERİ (kullanıcı bazlı link özelleştirme)
+// ══════════════════════════════════════════════════════════════════════════════
+
 model AdminLink {
   id        Int      @id @default(autoincrement())
   userId    Int      @map("user_id")
@@ -70,8 +114,65 @@ model AdminLink {
   linkUrl   String   @map("link_url")
   createdAt DateTime @default(now()) @map("created_at")
 
-  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@unique([userId, channelId, linkCode])
   @@map("admin_links")
+}
+
+// ══════════════════════════════════════════════════════════════════════════════
+// İSTATİSTİK TABLOLARI
+// ══════════════════════════════════════════════════════════════════════════════
+
+// Kod gönderim geçmişi
+model CodeLog {
+  id            Int      @id @default(autoincrement())
+  code          String
+  link          String
+  sourceChannel BigInt   @map("source_channel")
+  sourceName    String?  @map("source_name")
+  createdAt     DateTime @default(now()) @map("created_at")
+
+  deliveries    CodeDelivery[]
+
+  @@index([createdAt])
+  @@index([sourceChannel])
+  @@map("code_logs")
+}
+
+// Her kanala gönderim kaydı
+model CodeDelivery {
+  id          Int      @id @default(autoincrement())
+  codeLogId   Int      @map("code_log_id")
+  userId      Int      @map("user_id")
+  channelId   BigInt   @map("channel_id")
+  success     Boolean  @default(true)
+  errorMsg    String?  @map("error_msg")
+  sentAt      DateTime @default(now()) @map("sent_at")
+
+  codeLog     CodeLog  @relation(fields: [codeLogId], references: [id], onDelete: Cascade)
+  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  channel     Channel  @relation(fields: [channelId], references: [channelId], onDelete: Cascade)
+
+  @@index([sentAt])
+  @@index([userId])
+  @@index([channelId])
+  @@map("code_deliveries")
+}
+
+// Günlük özet istatistikler
+model DailyStat {
+  id          Int      @id @default(autoincrement())
+  date        DateTime @db.Date
+  userId      Int      @map("user_id")
+  channelId   BigInt   @map("channel_id")
+  totalCodes  Int      @default(0) @map("total_codes")
+
+  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  channel     Channel  @relation(fields: [channelId], references: [channelId], onDelete: Cascade)
+
+  @@unique([date, userId, channelId])
+  @@index([date])
+  @@index([userId])
+  @@map("daily_stats")
 }
