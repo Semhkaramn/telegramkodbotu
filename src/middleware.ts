@@ -44,9 +44,9 @@ export async function middleware(request: NextRequest) {
     const { payload } = await jwtVerify(token, JWT_SECRET);
     const role = payload.role as string;
 
-    // Admin routes - only superadmin can access
+    // Admin routes - only admin can access
     if (pathname.startsWith("/admin")) {
-      if (role !== "superadmin") {
+      if (role !== "admin") {
         return NextResponse.redirect(new URL("/dashboard", request.url));
       }
     }
@@ -59,7 +59,7 @@ export async function middleware(request: NextRequest) {
 
     // Root path - redirect based on role
     if (pathname === "/") {
-      if (role === "superadmin") {
+      if (role === "admin") {
         return NextResponse.redirect(new URL("/admin", request.url));
       } else {
         return NextResponse.redirect(new URL("/dashboard", request.url));
