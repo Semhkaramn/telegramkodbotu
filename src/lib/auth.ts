@@ -19,7 +19,7 @@ const JWT_SECRET = new TextEncoder().encode(
 export interface SessionPayload {
   userId: number;
   username: string;
-  role: string;
+  role: "admin" | "user"; // Artık sadece admin veya user
   impersonatingUserId?: number;
 }
 
@@ -69,27 +69,65 @@ export async function destroySession(): Promise<void> {
   cookieStore.delete("session");
 }
 
+// Admin tablosundan admin bilgisi al
+export async function getAdmin(adminId: number) {
+  return prisma.admin.findUnique({
+    where: { id: adminId },
+    select: {
+      id: true,
+      username: true,
+      createdAt: true,
+    },
+  });
+}
+
+// User tablosundan kullanıcı bilgisi al
+export async function getUser(userId: number) {
+  return prisma.user.findUnique({
+    where: { id: userId },
+    select: {
+      id: true,
+      username: true,
+      telegramId: true,
+      telegramUsername: true,
+      firstName: true,
+      lastName: true,
+      photoUrl: true,
+      lastSeen: true,
+      isActive: true,
+      isBanned: true,
+      bannedAt: true,
+      bannedReason: true,
+      botEnabled: true,
+      createdAt: true,
+    },
+  });
+}
+
 export async function getCurrentUser() {
   const session = await getSession();
   if (!session) return null;
 
-  const user = await prisma.user.findUnique({
-    where: { id: session.userId },
-    select: {
-      id: true,
-      username: true,
-      displayName: true,
-      role: true,
-      createdAt: true,
-    },
-  });
+  if (session.role === "admin") {
+    const admin = await getAdmin(session.userId);
+    if (!admin) return null;
+    return {
+      ...admin,
+      role: "admin" as const,
+    };
+  }
 
-  return user;
+  const user = await getUser(session.userId);
+  if (!user) return null;
+  return {
+    ...user,
+    role: "user" as const,
+  };
 }
 
 export async function setImpersonation(targetUserId: number): Promise<{ success: boolean; error?: string }> {
   const session = await getSession();
-  if (!session || session.role !== "superadmin") {
+  if (!session || session.role !== "admin") {
     return { success: false, error: "Yetkisiz erişim" };
   }
 
@@ -132,32 +170,25 @@ export async function getEffectiveUser() {
   const session = await getSession();
   if (!session) return null;
 
-  // If superadmin is impersonating another user
-  if (session.impersonatingUserId && session.role === "superadmin") {
-    const targetUser = await prisma.user.findUnique({
-      where: { id: session.impersonatingUserId },
-      select: {
-        id: true,
-        username: true,
-        displayName: true,
-        role: true,
-        createdAt: true,
-      },
-    });
+  // Admin ise ve impersonation yapıyorsa
+  if (session.impersonatingUserId && session.role === "admin") {
+    const targetUser = await getUser(session.impersonatingUserId);
 
     if (targetUser) {
+      const admin = await getAdmin(session.userId);
       return {
         ...targetUser,
+        role: "user" as const,
         isImpersonating: true,
-        realUser: {
-          id: session.userId,
-          username: session.username,
-          role: session.role,
-        },
+        realUser: admin ? {
+          id: admin.id,
+          username: admin.username,
+          role: "admin" as const,
+        } : null,
       };
     }
   }
 
-  const user = await getCurrentUser();
-  return user ? { ...user, isImpersonating: false } : null;
+  const currentUser = await getCurrentUser();
+  return currentUser ? { ...currentUser, isImpersonating: false } : null;
 }
