@@ -8,24 +8,21 @@ async function main() {
   const adminUsername = process.env.SUPER_ADMIN_USERNAME || "Semhkaramn";
   const adminPassword = process.env.SUPER_ADMIN_PASSWORD || "Abuzittin74.";
 
-  // Süper admin hesabı oluştur
+  // Süper admin hesabı oluştur (Admin tablosuna)
   const hashedPassword = await bcrypt.hash(adminPassword, 12);
 
-  const superAdmin = await prisma.user.upsert({
+  const superAdmin = await prisma.admin.upsert({
     where: { username: adminUsername },
     update: {
       password: hashedPassword,
-      role: "superadmin",
     },
     create: {
       username: adminUsername,
       password: hashedPassword,
-      displayName: "Super Admin",
-      role: "superadmin",
     },
   });
 
-  console.log("✅ Süper admin oluşturuldu:", superAdmin.username);
+  console.log("✅ Süper admin oluşturuldu (Admin tablosu):", superAdmin.username);
 
   console.log("\n📋 Kurulum tamamlandı!");
   console.log(`   Giriş: ${adminUsername}`);
