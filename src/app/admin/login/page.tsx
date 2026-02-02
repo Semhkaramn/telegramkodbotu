@@ -24,7 +24,7 @@ export default function AdminLoginPage() {
       const res = await fetch("/api/auth/login", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ username, password }),
+        body: JSON.stringify({ username, password, type: "admin" }),
       });
 
       const data = await res.json();
@@ -35,8 +35,8 @@ export default function AdminLoginPage() {
         return;
       }
 
-      // Sadece superadmin girebilir
-      if (data.user.role !== "superadmin") {
+      // Sadece admin girebilir
+      if (data.user.role !== "admin") {
         setError("Bu sayfaya erisim yetkiniz yok. Lutfen uye girisini kullanin.");
         setLoading(false);
         return;
