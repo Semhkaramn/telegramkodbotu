@@ -10,7 +10,7 @@ export async function GET(
 ) {
   try {
     const session = await getSession();
-    if (!session || session.role !== "superadmin") {
+    if (!session || session.role !== "admin") {
       return NextResponse.json({ error: "Yetkisiz erişim" }, { status: 403 });
     }
 
@@ -22,8 +22,12 @@ export async function GET(
       select: {
         id: true,
         username: true,
-        displayName: true,
-        role: true,
+        telegramId: true,
+        telegramUsername: true,
+        firstName: true,
+        lastName: true,
+        photoUrl: true,
+        lastSeen: true,
         isActive: true,
         isBanned: true,
         bannedAt: true,
@@ -46,6 +50,8 @@ export async function GET(
 
     return NextResponse.json({
       ...user,
+      telegramId: user.telegramId ? user.telegramId.toString() : null,
+      fullName: [user.firstName, user.lastName].filter(Boolean).join(" ") || null,
       channels: user.channels.map((uc) => ({
         ...uc,
         channelId: uc.channelId.toString(),
@@ -72,7 +78,7 @@ export async function PATCH(
 ) {
   try {
     const session = await getSession();
-    if (!session || session.role !== "superadmin") {
+    if (!session || session.role !== "admin") {
       return NextResponse.json({ error: "Yetkisiz erişim" }, { status: 403 });
     }
 
@@ -82,8 +88,11 @@ export async function PATCH(
     const {
       username,
       password,
-      displayName,
-      role,
+      telegramId,
+      telegramUsername,
+      firstName,
+      lastName,
+      photoUrl,
       isActive,
       isBanned,
       bannedReason,
@@ -94,10 +103,17 @@ export async function PATCH(
     const updateData: Record<string, unknown> = {};
 
     if (username !== undefined) updateData.username = username;
-    if (displayName !== undefined) updateData.displayName = displayName;
-    if (role !== undefined) updateData.role = role;
+    if (telegramUsername !== undefined) updateData.telegramUsername = telegramUsername;
+    if (firstName !== undefined) updateData.firstName = firstName;
+    if (lastName !== undefined) updateData.lastName = lastName;
+    if (photoUrl !== undefined) updateData.photoUrl = photoUrl;
     if (isActive !== undefined) updateData.isActive = isActive;
     if (botEnabled !== undefined) updateData.botEnabled = botEnabled;
+
+    // Telegram ID güncelleme
+    if (telegramId !== undefined) {
+      updateData.telegramId = telegramId ? BigInt(telegramId) : null;
+    }
 
     // Ban işlemi
     if (isBanned !== undefined) {
@@ -123,8 +139,11 @@ export async function PATCH(
       select: {
         id: true,
         username: true,
-        displayName: true,
-        role: true,
+        telegramId: true,
+        telegramUsername: true,
+        firstName: true,
+        lastName: true,
+        photoUrl: true,
         isActive: true,
         isBanned: true,
         bannedAt: true,
@@ -146,7 +165,11 @@ export async function PATCH(
     // Bot aktif kanalları yenilemeli
     await invalidateCache();
 
-    return NextResponse.json(user);
+    return NextResponse.json({
+      ...user,
+      telegramId: user.telegramId ? user.telegramId.toString() : null,
+      fullName: [user.firstName, user.lastName].filter(Boolean).join(" ") || null,
+    });
   } catch (error) {
     console.error("Update user error:", error);
     return NextResponse.json({ error: "Sunucu hatası" }, { status: 500 });
@@ -160,20 +183,12 @@ export async function DELETE(
 ) {
   try {
     const session = await getSession();
-    if (!session || session.role !== "superadmin") {
+    if (!session || session.role !== "admin") {
       return NextResponse.json({ error: "Yetkisiz erişim" }, { status: 403 });
     }
 
     const { id } = await params;
     const userId = parseInt(id);
-
-    // Kendi kendini silemesin
-    if (userId === session.userId) {
-      return NextResponse.json(
-        { error: "Kendi hesabınızı silemezsiniz" },
-        { status: 400 }
-      );
-    }
 
     await prisma.user.delete({
       where: { id: userId },
